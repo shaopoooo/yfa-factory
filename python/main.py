@@ -1,12 +1,17 @@
 import json
 import sys
-import threading
 import time
 import os
+import logging
+from apscheduler.schedulers.blocking import BlockingScheduler
 
 import requests
 import MySQLdb
 from dotenv import load_dotenv
+
+# Configure logging
+logging.basicConfig()
+# logging.getLogger('apscheduler').setLevel(logging.DEBUG)
 
 load_dotenv()
 host = os.getenv("DB_HOST")
@@ -23,28 +28,19 @@ def Hand_switch(ip,address,doStatus):
     r = json.loads(r.text)
     #print (r['io']['do'][address]['doStatus'])
     now_status=(r['io']['do'][address]['doStatus'])  
-    ''' 
-    if address=='2':
-      Errorlog_Insert.status_connection_motor('2')
-      Errorlog_Insert.status_connection_motor('3')
-      Errorlog_Insert.status_connection_motor('4')
-      Errorlog_Insert.status_connection_motor('5')
-    else:  
-      Errorlog_Insert.status_connection_led(address)
-    '''
+    
     if(now_status!=doStatus): 
       data={"slot":0,"io":{"do":{address:{"doStatus":doStatus}}}}
       aa=json.dumps(data,indent=4)
+      # requests.put(url, aa, headers=headers) # Uncomment if this was intended to run
       k= requests.put(url, aa, headers=headers)
        
   except:
     print("Unexpected error:", sys.exc_info()[0])
 
-class AutoControlLed(threading.Thread):
-  def __init__(self):
-    threading.Thread.__init__(self)
-  def run(self):
-    while(1):
+def run_led_control():
+  print("[%s] Running LED control task..." % time.strftime("%Y-%m-%d %H:%M:%S"))
+  try:
       db = MySQLdb.connect(host, user, passwd, db_name)
       cursor = db.cursor()
       cursor.execute("SELECT * FROM control_led where control = 'auto';")
@@ -112,14 +108,12 @@ class AutoControlLed(threading.Thread):
           cursor.execute("UPDATE control_led SET control_status = '"+str(cs)+"' WHERE ip = '"+ip+"' AND address= "+address+";")
           db.commit()
       db.close()
-      time.sleep(3)
+  except Exception as e:
+      print("Error in LED control:", e)
 
-class Autocontrol_Motor(threading.Thread):
-  def __init__(self):
-    threading.Thread.__init__(self)
-  def run(self):
-    while(1):
-      time.sleep(60)
+def run_motor_control():
+  print("[%s] Running Motor control task..." % time.strftime("%Y-%m-%d %H:%M:%S"))
+  try:
       db = MySQLdb.connect(host, user, passwd, db_name)
       cursor = db.cursor()
       cursor.execute("SELECT * FROM control_motor where control = 'auto';")
@@ -158,11 +152,20 @@ class Autocontrol_Motor(threading.Thread):
 
       db.commit()
       db.close()
+  except Exception as e:
+      print("Error in Motor control:", e)
 
-thread1=AutoControlLed()
-thread1.setDaemon(True)
-thread1.start()
-
-while (1):
-  print ("Exiting Main Thread")
-  time.sleep(1)
+if __name__ == "__main__":
+    scheduler = BlockingScheduler()
+    
+    # Schedule LED control to run every 10 minutes (0, 10, 20, 30, 40, 50)
+    scheduler.add_job(run_led_control, 'cron', minute='*/10', second='0')
+    
+    # Schedule Motor control to run every 10 minutes (0, 10, 20, 30, 40, 50)
+    scheduler.add_job(run_motor_control, 'cron', minute='*/10', second='0')
+    
+    print('Starting scheduler... Press Ctrl+C to exit')
+    try:
+        scheduler.start()
+    except (KeyboardInterrupt, SystemExit):
+        pass
