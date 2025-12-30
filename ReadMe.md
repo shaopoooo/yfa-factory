@@ -1,3 +1,64 @@
+# Smart Plant Factory Automation V2
+
+這是一個基於 Python 2.7 的自動化控制系統，用於管理植物工廠的 LED 照明與馬達循環。
+
+## 功能特色
+- **自動排程控制**：使用 `APScheduler` 進行精確的任務排程。
+- **LED 控制**：根據設定的時間區間自動開關植物燈。
+- **馬達控制**：管理馬達的運轉與休息循環。
+- **Docker 化部署**：支援容器化執行，方便部署。
+
+## 環境需求
+- Python 2.7
+- MariaDB / MySQL
+- Docker (選用)
+
+## 安裝與執行
+
+### 1. 安裝依賴套件
+```bash
+cd python
+pip install -r requirements.txt
+```
+
+### 2. 設定環境變數
+請複製 `.env.sample` 為 `.env` 並填入資料庫連線資訊：
+```bash
+cp .env.sample .env
+# 編輯 .env 檔案填入 DB_HOST, DB_USER, DB_PASSWD, DB_NAME
+```
+
+### 3. 執行程式
+直接執行 `main.py` 即可啟動排程器：
+```bash
+python main.py
+```
+程式啟動後會持續運行，並在終端機顯示執行日誌與時間戳記。
+
+## 排程設定
+目前的排程設定如下 (於 `main.py` 中定義)：
+- **LED 控制任務 (`run_led_control`)**: 每 **10 分鐘** 執行一次 (00, 10, 20, 30, 40, 50 分)。
+- **馬達控制任務 (`run_motor_control`)**: 每 **10 分鐘** 執行一次 (00, 10, 20, 30, 40, 50 分)。
+
+> 注意：馬達的倒數計時邏輯會依賴此執行頻率。
+
+## 測試
+本專案包含單元測試，位於 `tests/` 目錄下。
+如需執行測試 (需安裝 `mock` 套件)：
+```bash
+cd python
+python -m unittest discover tests
+```
+
+## Docker 部署
+使用 Docker Compose 啟動服務：
+```bash
+docker-compose up --build -d
+```
+
+---
+
+## 系統架構圖
 ```mermaid
 ---
 config:

@@ -19,6 +19,9 @@ user = os.getenv("DB_USER")
 passwd = os.getenv("DB_PASSWD")
 db_name = os.getenv("DB_NAME")
 
+def get_db_connection():
+  return MySQLdb.connect(host, user, passwd, db_name)
+
 def Hand_switch(ip,address,doStatus):
   try:
     url = 'http://'+ip+'/api/slot/0/io/do/'+address+'/doStatus'
@@ -41,7 +44,7 @@ def Hand_switch(ip,address,doStatus):
 def run_led_control():
   print("[%s] Running LED control task..." % time.strftime("%Y-%m-%d %H:%M:%S"))
   try:
-      db = MySQLdb.connect(host, user, passwd, db_name)
+      db = get_db_connection()
       cursor = db.cursor()
       cursor.execute("SELECT * FROM control_led where control = 'auto';")
       result = cursor.fetchall()
@@ -114,7 +117,7 @@ def run_led_control():
 def run_motor_control():
   print("[%s] Running Motor control task..." % time.strftime("%Y-%m-%d %H:%M:%S"))
   try:
-      db = MySQLdb.connect(host, user, passwd, db_name)
+      db = get_db_connection()
       cursor = db.cursor()
       cursor.execute("SELECT * FROM control_motor where control = 'auto';")
       result = cursor.fetchall()
@@ -162,7 +165,7 @@ if __name__ == "__main__":
     scheduler.add_job(run_led_control, 'cron', minute='*/10', second='0')
     
     # Schedule Motor control to run every 10 minutes (0, 10, 20, 30, 40, 50)
-    scheduler.add_job(run_motor_control, 'cron', minute='*/10', second='0')
+    # scheduler.add_job(run_motor_control, 'cron', minute='*/10', second='0')
     
     print('Starting scheduler... Press Ctrl+C to exit')
     try:
