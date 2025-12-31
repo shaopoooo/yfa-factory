@@ -122,38 +122,82 @@ def run_motor_control():
       cursor = db.cursor()
       cursor.execute("SELECT * FROM control_motor where control = 'auto';")
       result = cursor.fetchall()
+      
+      # Convert result to a list of dicts for easier handling/sorting
+      motors = []
+      for row in result:
+          try:
+              line_priority = int(row[3])
+          except (ValueError, TypeError):
+              line_priority = 9999
+          
+          motors.append({
+              'ip': str(row[1]),
+              'address': str(row[2]),
+              'line': line_priority,
+              'hour_cycle': int(row[6]),
+              'minute_cycle': int(row[7]),
+              'original_row': row
+          })
+
+      # Sort by minute_cycle then line
+      motors.sort(key=lambda x: (x['minute_cycle'], x['line']))
 
       current_time = time.localtime()
-      # Calculate total minutes from start of the day (00:00)
       current_total_minutes = current_time.tm_hour * 60 + current_time.tm_min
 
-      for i in result:
-        ip = str(i[1])
-        address = str(i[2])
-        hour_cycle = int(i[6])
-        minute_cycle = int(i[7])
+      for rank, m in enumerate(motors):
+        ip = m['ip']
+        address = m['address']
+        hour_cycle = m['hour_cycle']
+        minute_cycle = m['minute_cycle']
         
         cycle_minutes = hour_cycle * 60
         if cycle_minutes == 0:
-            cycle_minutes = 24 * 60 # Default to 24 hours if 0 to avoid error
+            cycle_minutes = 24 * 60
 
-        # Determine position in the cycle
+        # Calculate time offset based on rank (stagger every 4 motors)
+        # 0-3: offset 0
+        # 4-7: offset minute_cycle
+        # etc.
+        time_offset = (rank // 4) * minute_cycle
+        
+        # Adjust position by offset effectively shifting the "start" of the cycle for this motor
+        # But we want the *window* to be shifted.
+        # Window is [offset, offset + minute_cycle) relative to the start of the hour_cycle.
+        
         position = current_total_minutes % cycle_minutes
         
-        # Logic: First 'minute_cycle' minutes are ON, rest are OFF
         control_status = 0
-        if position < minute_cycle:
-          # ON Phase
-          control_status = 1
-          Hand_switch(ip, address, control_status)
-          minute_timer = minute_cycle - position
-          hour_timer = 0
-        else:
-          # OFF Phase
-          Hand_switch(ip, address, control_status)
-          minute_timer = minute_cycle
-          hour_timer = cycle_minutes - position
+        minute_timer = 0
+        hour_timer = 0
+        
+        # Check if we are in the active window
+        start_time = time_offset
+        end_time = time_offset + minute_cycle
+        
+        # Handle wrap-around if needed? 
+        # If hour_cycle is small, staggered slots might exceed it. 
+        # Assuming hour_cycle is large enough (e.g. 1 hour) for now.
+        
+        if start_time <= position < end_time:
+            # ON Phase
+            control_status = 1
+            minute_timer = end_time - position
+            hour_timer = 0
+        elif position < start_time:
+            # Not yet reached offset (Waiting for turn)
+            control_status = 0
+            minute_timer = minute_cycle
+            hour_timer = start_time - position
+        else: # position >= end_time
+            # Finished run for this cycle
+            control_status = 0
+            minute_timer = minute_cycle
+            hour_timer = cycle_minutes - position + start_time
 
+        Hand_switch(ip, address, control_status)
+        
         cursor.execute("UPDATE control_motor SET hour_timer = '"+str(hour_timer)+"', minute_timer = '"+str(minute_timer)+"', control_status = '"+str(control_status)+"' WHERE ip = '"+ip+"' AND address = "+address+";")
 
       db.commit()

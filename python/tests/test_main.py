@@ -153,5 +153,74 @@ class TestFactoryControl(unittest.TestCase):
         # position=15. minute_timer = 0. hour_timer = 60 - 15 = 45. control_status = 0
         mock_cursor.execute.assert_any_call("UPDATE control_motor SET hour_timer = '45', minute_timer = '0', control_status = '0' WHERE ip = '1.2.3.4' AND address = 2;")
 
+    @patch('main.get_db_connection')
+    @patch('main.requests')
+    @patch('main.time')
+    def test_run_motor_control_staggered(self, mock_time, mock_requests, mock_get_db):
+        """Test Motor control: Staggered start times based on line priority"""
+        # Mock DB
+        mock_cursor = MagicMock()
+        mock_get_db.return_value = MagicMock(cursor=MagicMock(return_value=mock_cursor))
+
+        # Mock 5 rows: ip, address, line, ..., hour_cycle, minute_cycle, ...
+        # Columns: 1=ip, 2=address, 3=line, 6=hour_cycle (1), 7=minute_cycle (10)
+        # Ranks after sorting by line:
+        # 0: Line 10 (IP 1.1.1.2) -> Offset 0. Active [0, 10)
+        # 1: Line 20 (IP 1.1.1.3) -> Offset 0. Active [0, 10)
+        # 2: Line 30 (IP 1.1.1.4) -> Offset 0. Active [0, 10)
+        # 3: Line 40 (IP 1.1.1.5) -> Offset 0. Active [0, 10)
+        # 4: Line 50 (IP 1.1.1.1) -> Offset 10. Active [10, 20)
+        
+        row1 = (None, '1.1.1.1', '1', 50, 0, 0, 1, 10, 0, 0, 0)
+        row2 = (None, '1.1.1.2', '1', 10, 0, 0, 1, 10, 0, 0, 0)
+        row3 = (None, '1.1.1.3', '1', 20, 0, 0, 1, 10, 0, 0, 0)
+        row4 = (None, '1.1.1.4', '1', 30, 0, 0, 1, 10, 0, 0, 0)
+        row5 = (None, '1.1.1.5', '1', 40, 0, 0, 1, 10, 0, 0, 0)
+        
+        mock_cursor.fetchall.return_value = [row1, row2, row3, row4, row5]
+
+        # --- Sub-test 1: T=5 (00:05). Active window for Rank 0-3 ---
+        mock_time.localtime.return_value = time.struct_time((2025, 12, 30, 0, 5, 0, 1, 364, 0))
+        mock_time.strftime.return_value = "2025-12-30 00:05:00"
+
+        # Execute
+        main.run_motor_control()
+
+        # Helper to check assert calls
+        def check_status(ip, status, message_suffix=""):
+             found = False
+             for call_args in mock_cursor.execute.call_args_list:
+                 sql = call_args[0][0]
+                 if ip in sql and f"control_status = '{status}'" in sql:
+                     found = True
+                     break
+             self.assertTrue(found, f"Expected IP {ip} to have status {status} {message_suffix}")
+
+        check_status('1.1.1.2', 1, "at T=5") # Rank 0
+        check_status('1.1.1.3', 1, "at T=5") # Rank 1
+        check_status('1.1.1.4', 1, "at T=5") # Rank 2
+        check_status('1.1.1.5', 1, "at T=5") # Rank 3
+        check_status('1.1.1.1', 0, "at T=5 (should wait)") # Rank 4 (Wait)
+        
+        # Reset mocks for next sub-test
+        mock_cursor.reset_mock()
+        mock_requests.reset_mock()
+
+        # --- Sub-test 2: T=15 (00:15). Active window for Rank 4 ---
+        mock_time.localtime.return_value = time.struct_time((2025, 12, 30, 0, 15, 0, 1, 364, 0))
+        mock_time.strftime.return_value = "2025-12-30 00:15:00"
+        
+        # We need to set fetchall again because reset_mock might have cleared it or it's a new call
+        mock_cursor.fetchall.return_value = [row1, row2, row3, row4, row5]
+
+        # Execute
+        main.run_motor_control()
+
+        check_status('1.1.1.2', 0, "at T=15 (finished)") # Rank 0
+        check_status('1.1.1.3', 0, "at T=15 (finished)") # Rank 1
+        check_status('1.1.1.4', 0, "at T=15 (finished)") # Rank 2
+        check_status('1.1.1.5', 0, "at T=15 (finished)") # Rank 3
+        check_status('1.1.1.1', 1, "at T=15 (should run)") # Rank 4 (Active now)
+
 if __name__ == '__main__':
     unittest.main()
