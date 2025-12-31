@@ -141,18 +141,20 @@ def run_motor_control():
         position = current_total_minutes % cycle_minutes
         
         # Logic: First 'minute_cycle' minutes are ON, rest are OFF
+        control_status = 0
         if position < minute_cycle:
           # ON Phase
-          Hand_switch(ip, address, 1)
+          control_status = 1
+          Hand_switch(ip, address, control_status)
           minute_timer = minute_cycle - position
           hour_timer = 0
         else:
           # OFF Phase
-          Hand_switch(ip, address, 0)
-          minute_timer = 0
+          Hand_switch(ip, address, control_status)
+          minute_timer = minute_cycle
           hour_timer = cycle_minutes - position
 
-        cursor.execute("UPDATE control_motor SET hour_timer = '"+str(hour_timer)+"', minute_timer = '"+str(minute_timer)+"' WHERE ip = '"+ip+"' AND address = "+address+";")
+        cursor.execute("UPDATE control_motor SET hour_timer = '"+str(hour_timer)+"', minute_timer = '"+str(minute_timer)+"', control_status = '"+str(control_status)+"' WHERE ip = '"+ip+"' AND address = "+address+";")
 
       db.commit()
       db.close()

@@ -116,8 +116,8 @@ class TestFactoryControl(unittest.TestCase):
         self.assertTrue(mock_requests.put.called)
 
         # Verify DB Update
-        # position=5. minute_timer = 10-5 = 5. hour_timer = 0.
-        mock_cursor.execute.assert_any_call("UPDATE control_motor SET hour_timer = '0', minute_timer = '5' WHERE ip = '1.2.3.4' AND address = 2;")
+        # position=5. minute_timer = 10-5 = 5. hour_timer = 0. control_status = 1
+        mock_cursor.execute.assert_any_call("UPDATE control_motor SET hour_timer = '0', minute_timer = '5', control_status = '1' WHERE ip = '1.2.3.4' AND address = 2;")
 
     @patch('main.get_db_connection')
     @patch('main.requests')
@@ -150,8 +150,8 @@ class TestFactoryControl(unittest.TestCase):
         self.assertTrue(mock_requests.put.called)
 
         # Verify DB Update
-        # position=15. minute_timer = 0. hour_timer = 60 - 15 = 45.
-        mock_cursor.execute.assert_any_call("UPDATE control_motor SET hour_timer = '45', minute_timer = '0' WHERE ip = '1.2.3.4' AND address = 2;")
+        # position=15. minute_timer = 0. hour_timer = 60 - 15 = 45. control_status = 0
+        mock_cursor.execute.assert_any_call("UPDATE control_motor SET hour_timer = '45', minute_timer = '0', control_status = '0' WHERE ip = '1.2.3.4' AND address = 2;")
 
 if __name__ == '__main__':
     unittest.main()
