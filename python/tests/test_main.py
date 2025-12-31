@@ -85,51 +85,26 @@ class TestFactoryControl(unittest.TestCase):
 
     @patch('main.get_db_connection')
     @patch('main.requests')
-    def test_run_motor_control_countdown_hour(self, mock_requests, mock_get_db):
-        """Test Motor control: Countdown hour_timer"""
+    @patch('main.time')
+    def test_run_motor_control_on_phase(self, mock_time, mock_requests, mock_get_db):
+        """Test Motor control: ON phase (within minute_cycle)"""
+        # Mock time to 10:05:00 (Total minutes = 605)
+        # Cycle: 1 hour (60 mins). Position = 605 % 60 = 5
+        # minute_cycle = 10. Position 5 < 10 -> ON
+        mock_time.localtime.return_value = time.struct_time((2025, 12, 30, 10, 5, 0, 1, 364, 0))
+        mock_time.strftime.return_value = "2025-12-30 10:05:00"
+
         # Mock DB
         mock_cursor = MagicMock()
         mock_get_db.return_value = MagicMock(cursor=MagicMock(return_value=mock_cursor))
         
-        # Mock row: hour_timer > 0
-        # Indexes used: i[1]=ip, i[2]=address, i[3]=mix, i[6]=hour_cycle, i[7]=minute_cycle, i[9]=hour_timer, i[10]=minute_timer
-        #                  0,   1,       2,   3,  4, 5, 6,  7, 8, 9, 10
-        mock_row = (None, '1.2.3.4', '2', 13, 0, 0, 10, 30, 0, 5, 0) # hour_timer=5
+        # Mock row
+        # Indexes: i[1]=ip, i[2]=address, i[6]=hour_cycle, i[7]=minute_cycle
+        # i[6]=1 (1 hour cycle), i[7]=10 (10 mins on)
+        mock_row = (None, '1.2.3.4', '2', None, 0, 0, 1, 10, 0, 0, 0)
         mock_cursor.fetchall.return_value = [mock_row]
 
-        # Mock requests response for Hand_switch
-        mock_response = MagicMock()
-        mock_response.text = json.dumps({'io': {'do': {'2': {'doStatus': 1}}}}) # Assume currently ON
-        mock_requests.get.return_value = mock_response
-
-        # Execute
-        main.run_motor_control()
-
-        # Verify logic: hour_timer > 0 -> hour_timer - 1 -> Hand_switch OFF
-        # hour_timer was 5, should update to 4
-        # Hand_switch off ('0')
-        
-        # Verify DB Update
-        mock_cursor.execute.assert_any_call("UPDATE control_motor SET hour_timer = '4' WHERE ip = '1.2.3.4' AND address = 2;")
-        
-        # Verify Hand_switch(..., 0) call (requests.get called to check status)
-        self.assertTrue(mock_requests.get.called)
-
-
-    @patch('main.get_db_connection')
-    @patch('main.requests')
-    def test_run_motor_control_countdown_minute(self, mock_requests, mock_get_db):
-        """Test Motor control: Countdown minute_timer when hour_timer is 0"""
-        # Mock DB
-        mock_cursor = MagicMock()
-        mock_get_db.return_value = MagicMock(cursor=MagicMock(return_value=mock_cursor))
-        
-        # Mock row: hour_timer = 0, minute_timer = 10
-        #                  0,   1,       2,   3,  4, 5, 6,  7, 8, 9, 10
-        mock_row = (None, '1.2.3.4', '2', 13, 0, 0, 10, 30, 0, 0, 10) 
-        mock_cursor.fetchall.return_value = [mock_row]
-
-        # Mock requests (current status 0)
+        # Mock requests (current status OFF '0')
         mock_response = MagicMock()
         mock_response.text = json.dumps({'io': {'do': {'2': {'doStatus': 0}}}})
         mock_requests.get.return_value = mock_response
@@ -137,14 +112,46 @@ class TestFactoryControl(unittest.TestCase):
         # Execute
         main.run_motor_control()
 
-        # Verify logic: hour_timer=0, minute_timer>0 -> minute_timer-1 -> Hand_switch ON
-        # minute_timer 10 -> 9
-        
-        # Verify DB Update
-        mock_cursor.execute.assert_any_call("UPDATE control_motor SET minute_timer = '9' WHERE ip = '1.2.3.4' AND address = 2;")
-        
-        # Verify Hand_switch(..., 1) -> requests.put (since current=0)
+        # Verify Hand_switch turned ON
         self.assertTrue(mock_requests.put.called)
+
+        # Verify DB Update
+        # position=5. minute_timer = 10-5 = 5. hour_timer = 0.
+        mock_cursor.execute.assert_any_call("UPDATE control_motor SET hour_timer = '0', minute_timer = '5' WHERE ip = '1.2.3.4' AND address = 2;")
+
+    @patch('main.get_db_connection')
+    @patch('main.requests')
+    @patch('main.time')
+    def test_run_motor_control_off_phase(self, mock_time, mock_requests, mock_get_db):
+        """Test Motor control: OFF phase (outside minute_cycle)"""
+        # Mock time to 10:15:00 (Total minutes = 615)
+        # Cycle: 1 hour. Position = 15
+        # minute_cycle = 10. Position 15 >= 10 -> OFF
+        mock_time.localtime.return_value = time.struct_time((2025, 12, 30, 10, 15, 0, 1, 364, 0))
+        mock_time.strftime.return_value = "2025-12-30 10:15:00"
+
+        # Mock DB
+        mock_cursor = MagicMock()
+        mock_get_db.return_value = MagicMock(cursor=MagicMock(return_value=mock_cursor))
+        
+        # Mock row: 1 hour cycle, 10 mins on
+        mock_row = (None, '1.2.3.4', '2', None, 0, 0, 1, 10, 0, 0, 0)
+        mock_cursor.fetchall.return_value = [mock_row]
+
+        # Mock requests (current status ON '1')
+        mock_response = MagicMock()
+        mock_response.text = json.dumps({'io': {'do': {'2': {'doStatus': 1}}}})
+        mock_requests.get.return_value = mock_response
+
+        # Execute
+        main.run_motor_control()
+
+        # Verify Hand_switch turned OFF
+        self.assertTrue(mock_requests.put.called)
+
+        # Verify DB Update
+        # position=15. minute_timer = 0. hour_timer = 60 - 15 = 45.
+        mock_cursor.execute.assert_any_call("UPDATE control_motor SET hour_timer = '45', minute_timer = '0' WHERE ip = '1.2.3.4' AND address = 2;")
 
 if __name__ == '__main__':
     unittest.main()

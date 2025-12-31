@@ -123,36 +123,36 @@ def run_motor_control():
       cursor.execute("SELECT * FROM control_motor where control = 'auto';")
       result = cursor.fetchall()
 
+      current_time = time.localtime()
+      # Calculate total minutes from start of the day (00:00)
+      current_total_minutes = current_time.tm_hour * 60 + current_time.tm_min
+
       for i in result:
-        ip=str(i[1])
-        hour_cycle=int(i[6])
-        minute_cycle=int(i[7])
-        #now_time=int(time.strftime("%H", time.localtime()))
-        address=str(i[2])
-        #print (address)
-        hour_timer=int(i[9])
-        minute_timer=int(i[10])
-        mix=int(i[3])-13
-        if hour_timer>0:
-          hour_timer=hour_timer-1
-          #print (hour_timer)
-          Hand_switch(ip,address,0)
-          #Control_IO.Test_DO('Mix0'+str(mix),'0')
-          cursor.execute("UPDATE control_motor SET hour_timer = '"+str(hour_timer)+"' WHERE ip = '"+ip+"' AND address = "+address+";")
-          #db.commit()
+        ip = str(i[1])
+        address = str(i[2])
+        hour_cycle = int(i[6])
+        minute_cycle = int(i[7])
+        
+        cycle_minutes = hour_cycle * 60
+        if cycle_minutes == 0:
+            cycle_minutes = 24 * 60 # Default to 24 hours if 0 to avoid error
+
+        # Determine position in the cycle
+        position = current_total_minutes % cycle_minutes
+        
+        # Logic: First 'minute_cycle' minutes are ON, rest are OFF
+        if position < minute_cycle:
+          # ON Phase
+          Hand_switch(ip, address, 1)
+          minute_timer = minute_cycle - position
+          hour_timer = 0
         else:
-          if minute_timer>0:
-            minute_timer=minute_timer-1
-            cursor.execute("UPDATE control_motor SET minute_timer = '"+str(minute_timer)+"' WHERE ip = '"+ip+"' AND address = "+address+";")
-            Hand_switch(ip,address,1)
-            #Control_IO.Test_DO('Mix0'+str(mix),'1')
-            #print (minute_timer)
-            #db.commit()
-          else:
-            hour_timer=hour_cycle*60-minute_cycle
-            minute_timer=minute_cycle
-            cursor.execute("UPDATE control_motor SET hour_timer = '"+str(hour_timer)+"', minute_timer = '"+str(minute_timer)+"' WHERE ip = '"+ip+"' AND address = "+address+";")
-            #db.commit()
+          # OFF Phase
+          Hand_switch(ip, address, 0)
+          minute_timer = 0
+          hour_timer = cycle_minutes - position
+
+        cursor.execute("UPDATE control_motor SET hour_timer = '"+str(hour_timer)+"', minute_timer = '"+str(minute_timer)+"' WHERE ip = '"+ip+"' AND address = "+address+";")
 
       db.commit()
       db.close()
