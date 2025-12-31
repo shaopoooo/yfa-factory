@@ -111,6 +111,7 @@ def run_led_control():
           cursor.execute("UPDATE control_led SET control_status = '"+str(cs)+"' WHERE ip = '"+ip+"' AND address= "+address+";")
           db.commit()
       db.close()
+      print("[%s] LED control task finished." % time.strftime("%Y-%m-%d %H:%M:%S"))
   except Exception as e:
       print("Error in LED control:", e)
 
@@ -148,24 +149,25 @@ def run_motor_control():
             #print (minute_timer)
             #db.commit()
           else:
-            hour_timer=hour_cycle*60
+            hour_timer=hour_cycle*60-minute_cycle
             minute_timer=minute_cycle
             cursor.execute("UPDATE control_motor SET hour_timer = '"+str(hour_timer)+"', minute_timer = '"+str(minute_timer)+"' WHERE ip = '"+ip+"' AND address = "+address+";")
             #db.commit()
 
       db.commit()
       db.close()
+      print("[%s] Motor control task finished." % time.strftime("%Y-%m-%d %H:%M:%S"))
   except Exception as e:
       print("Error in Motor control:", e)
 
 if __name__ == "__main__":
     scheduler = BlockingScheduler()
     
-    # Schedule LED control to run every 10 minutes (0, 10, 20, 30, 40, 50)
-    scheduler.add_job(run_led_control, 'cron', minute='*/10', second='0')
+    # Schedule LED control to run every 10 seconds
+    scheduler.add_job(run_led_control, 'cron', minute='*', second='*/10')
     
-    # Schedule Motor control to run every 10 minutes (0, 10, 20, 30, 40, 50)
-    # scheduler.add_job(run_motor_control, 'cron', minute='*/10', second='0')
+    # Schedule Motor control to run every 10 seconds
+    scheduler.add_job(run_motor_control, 'cron', minute='*', second='*/10')
     
     print('Starting scheduler... Press Ctrl+C to exit')
     try:

@@ -144,3 +144,4 @@ dist
 .env.dev
 history/
 mariadb_data/
+*.pyc
